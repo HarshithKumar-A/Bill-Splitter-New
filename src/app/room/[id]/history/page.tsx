@@ -1,10 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { FaTrash } from 'react-icons/fa'
 import Header from '@/components/Header'
+import { useApiAuth } from '@/hooks/useApiAuth'
+import { auth } from '@/lib/firebase.config'
+import { signOut, onAuthStateChanged } from 'firebase/auth'
 
 interface Expense {
   id: string
@@ -26,27 +29,46 @@ interface Expense {
 
 export default function HistoryPage() {
   const params = useParams()
+  const router = useRouter()
   const roomId = params.id as string
-  
+  const { authenticatedFetch } = useApiAuth()
+
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
-  
+  const [firebaseReady, setFirebaseReady] = useState(false)
+
   useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) setFirebaseReady(true)
+      else router.push('/login')
+    })
+    return () => unsubscribe()
+  }, [router])
+
+  useEffect(() => {
+    if (!firebaseReady) return
     fetchExpenses()
-  }, [roomId])
-  
+  }, [roomId, firebaseReady])
+
   const fetchExpenses = async () => {
     try {
       setIsLoading(true)
-      const response = await fetch(`/api/expenses?groupId=${roomId}`)
-      
+      const response = await authenticatedFetch(`/api/expenses?groupId=${roomId}`)
+
+      if (response.status === 401) {
+        await signOut(auth)
+        localStorage.removeItem('user')
+        router.push('/login')
+        return
+      }
+
       if (!response.ok) {
         throw new Error('Failed to fetch expenses')
       }
-      
+
       const data = await response.json()
       setExpenses(data)
     } catch (error) {
@@ -56,50 +78,57 @@ export default function HistoryPage() {
       setIsLoading(false)
     }
   }
-  
+
   // Group expenses by month
   const groupExpensesByMonth = () => {
     const grouped: Record<string, Expense[]> = {}
-    
+
     expenses.forEach(expense => {
       const date = new Date(expense.date)
       const monthYear = format(date, 'MMMM yyyy')
-      
+
       if (!grouped[monthYear]) {
         grouped[monthYear] = []
       }
-      
+
       grouped[monthYear].push(expense)
     })
-    
+
     // Sort expenses within each month by date (newest first)
     Object.keys(grouped).forEach(month => {
       grouped[month].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     })
-    
+
     return grouped
   }
-  
+
   const handleDeleteClick = (expenseId: string) => {
     setShowDeleteConfirm(expenseId)
   }
-  
+
   const handleCancelDelete = () => {
     setShowDeleteConfirm(null)
   }
-  
+
   const handleConfirmDelete = async (expenseId: string) => {
     try {
       setIsDeleting(expenseId)
-      
-      const response = await fetch(`/api/expenses/${expenseId}`, {
+
+      const response = await authenticatedFetch(`/api/expenses/${expenseId}`, {
         method: 'DELETE',
       })
-      
+
+      if (response.status === 401) {
+        await signOut(auth)
+        localStorage.removeItem('user')
+        router.push('/login')
+        return
+      }
+
       if (!response.ok) {
         throw new Error('Failed to delete expense')
       }
-      
+
       // Remove the expense from the state
       setExpenses(prevExpenses => prevExpenses.filter(expense => expense.id !== expenseId))
       setShowDeleteConfirm(null)
@@ -110,24 +139,24 @@ export default function HistoryPage() {
       setIsDeleting(null)
     }
   }
-  
+
   const groupedExpenses = groupExpensesByMonth()
-  
+
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 transition-colors">
-      <Header 
-        title="Expense History" 
-        showBackButton={true} 
+      <Header
+        title="Expense History"
+        showBackButton={true}
         backUrl={`/room/${roomId}`}
       />
-      
+
       <main className="max-w-3xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
         {error && (
           <div className="mb-6 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-md">
             <p className="text-sm text-red-700 dark:text-red-200">{error}</p>
           </div>
         )}
-        
+
         {isLoading ? (
           <div className="text-center py-10">
             <p className="text-gray-500 dark:text-gray-400">Loading expense history...</p>
@@ -159,7 +188,7 @@ export default function HistoryPage() {
                             <p className="font-bold text-gray-900 dark:text-white mr-4">
                               ₹{expense.totalAmount.toFixed(2)}
                             </p>
-                            <button 
+                            <button
                               onClick={() => handleDeleteClick(expense.id)}
                               className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-full"
                               aria-label="Delete expense"
@@ -168,7 +197,7 @@ export default function HistoryPage() {
                             </button>
                           </div>
                         </div>
-                        
+
                         <div className="mt-4 border-t border-gray-200 dark:border-gray-700 pt-4">
                           <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Split Details</h4>
                           <ul className="space-y-1">
@@ -182,7 +211,7 @@ export default function HistoryPage() {
                             ))}
                           </ul>
                         </div>
-                        
+
                         {/* Delete Confirmation */}
                         {showDeleteConfirm === expense.id && (
                           <div className="mt-4 border-t border-gray-200 dark:border-gray-700 pt-4">

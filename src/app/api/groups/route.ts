@@ -1,17 +1,14 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/db'
+import { getAuthUser, unauthorizedResponse } from '@/lib/auth'
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId')
+    // Verify authentication
+    const authUser = await getAuthUser(request)
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'User ID is required' },
-        { status: 400 }
-      )
-    }
+    // Use authenticated user's database ID to fetch their groups
+    const userId = authUser.id
 
     // Get all groups for the user
     const groups = await prisma.group.findMany({
@@ -43,13 +40,23 @@ export async function GET(request: Request) {
     const formattedGroups = groups.map(group => ({
       id: group.id,
       name: group.name,
+      destination: group.destination,
+      startDate: group.startDate.toISOString().split('T')[0],
+      endDate: group.endDate.toISOString().split('T')[0],
+      status: group.status,
+      currency: group.currency,
       created: group.createdAt.toISOString().split('T')[0],
       members: group.members.length
     }))
 
     return NextResponse.json(formattedGroups)
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching groups:', error)
+
+    if (error.message?.includes('Unauthorized')) {
+      return unauthorizedResponse(error.message)
+    }
+
     return NextResponse.json(
       { error: 'Something went wrong' },
       { status: 500 }
@@ -59,24 +66,47 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { name, userId, memberIds } = await request.json()
+    // Verify authentication
+    const authUser = await getAuthUser(request)
+
+    const { name, destination, description, startDate, endDate, currency = 'INR', memberIds = [] } = await request.json()
 
     // Validate input
-    if (!name || !userId) {
+    if (!name) {
       return NextResponse.json(
-        { error: 'Group name and user ID are required' },
+        { error: 'Trip name is required' },
         { status: 400 }
       )
     }
 
-    // Create group with the creator as a member
+    if (!destination) {
+      return NextResponse.json(
+        { error: 'Destination is required' },
+        { status: 400 }
+      )
+    }
+
+    if (!startDate || !endDate) {
+      return NextResponse.json(
+        { error: 'Start and end dates are required' },
+        { status: 400 }
+      )
+    }
+
+    // Create trip with the authenticated user as creator and member
     const group = await prisma.group.create({
       data: {
         name,
+        destination,
+        description,
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        currency,
+        status: 'ACTIVE',
         members: {
           create: [
-            { userId },
-            ...memberIds.map((memberId: string) => ({ userId: memberId }))
+            { userId: authUser.id },
+            ...(memberIds || []).map((memberId: string) => ({ userId: memberId }))
           ]
         }
       },
@@ -95,11 +125,16 @@ export async function POST(request: Request) {
     })
 
     return NextResponse.json(
-      { message: 'Group created successfully', group },
+      { message: 'Trip created successfully', group },
       { status: 201 }
     )
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating group:', error)
+
+    if (error.message?.includes('Unauthorized')) {
+      return unauthorizedResponse(error.message)
+    }
+
     return NextResponse.json(
       { error: 'Something went wrong' },
       { status: 500 }

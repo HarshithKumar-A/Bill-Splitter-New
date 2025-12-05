@@ -1,23 +1,11 @@
-'use client'
-
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ThemeToggle from '@/components/ThemeToggle'
+import RedirectIfLoggedIn from '@/components/RedirectIfLoggedIn'
 
 export default function HomePage() {
-  const router = useRouter()
-
-  useEffect(() => {
-    // Check if user is already logged in
-    const userData = localStorage.getItem('user')
-    if (userData) {
-      router.push('/dashboard')
-    }
-  }, [router])
-
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 transition-colors">
+      <RedirectIfLoggedIn />
       <div className="absolute top-4 right-4">
         <ThemeToggle />
       </div>

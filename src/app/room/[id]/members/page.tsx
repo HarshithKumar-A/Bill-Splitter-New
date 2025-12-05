@@ -1,9 +1,12 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { FaPlus, FaTrash, FaSearch, FaUserPlus } from 'react-icons/fa'
 import Header from '@/components/Header'
+import { useApiAuth } from '@/hooks/useApiAuth'
+import { auth } from '@/lib/firebase.config'
+import { signOut, onAuthStateChanged } from 'firebase/auth'
 
 interface Member {
   id: string
@@ -20,7 +23,9 @@ interface UserSearchResult {
 export default function RoomMembersPage() {
   const params = useParams()
   const roomId = params.id as string
-  
+  const { authenticatedFetch } = useApiAuth()
+  const router = useRouter()
+
   const [members, setMembers] = useState<Member[]>([])
   const [roomName, setRoomName] = useState('')
   const [isLoading, setIsLoading] = useState(true)
@@ -31,18 +36,37 @@ export default function RoomMembersPage() {
   const [selectedUser, setSelectedUser] = useState<UserSearchResult | null>(null)
   const [isAddingMember, setIsAddingMember] = useState(false)
   const [showDropdown, setShowDropdown] = useState(false)
+  const [firebaseReady, setFirebaseReady] = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
-  
+
+  // Wait for Firebase auth
   useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) setFirebaseReady(true)
+      else router.push('/login')
+    })
+    return () => unsubscribe()
+  }, [router])
+
+  useEffect(() => {
+    if (!firebaseReady) return
+
     const fetchRoomMembers = async () => {
       try {
         setIsLoading(true)
-        const response = await fetch(`/api/groups/${roomId}`)
-        
+        const response = await authenticatedFetch(`/api/groups/${roomId}`)
+
+        if (response.status === 401) {
+          await signOut(auth)
+          localStorage.removeItem('user')
+          router.push('/login')
+          return
+        }
+
         if (!response.ok) {
           throw new Error('Failed to fetch room details')
         }
-        
+
         const data = await response.json()
         setMembers(data.members)
         setRoomName(data.name)
@@ -53,10 +77,10 @@ export default function RoomMembersPage() {
         setIsLoading(false)
       }
     }
-    
+
     fetchRoomMembers()
-  }, [roomId])
-  
+  }, [roomId, firebaseReady, authenticatedFetch, router])
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -64,36 +88,45 @@ export default function RoomMembersPage() {
         setShowDropdown(false)
       }
     }
-    
+
     document.addEventListener('mousedown', handleClickOutside)
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [])
-  
+
   // Search for users when query changes
   useEffect(() => {
+    if (!firebaseReady) return
+
     const searchUsers = async () => {
       if (!searchQuery.trim() || searchQuery.length < 2) {
         setSearchResults([])
         return
       }
-      
+
       try {
         setIsSearching(true)
-        const response = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery)}`)
-        
+        const response = await authenticatedFetch(`/api/users/search?q=${encodeURIComponent(searchQuery)}`)
+
+        if (response.status === 401) {
+          await signOut(auth)
+          localStorage.removeItem('user')
+          router.push('/login')
+          return
+        }
+
         if (!response.ok) {
           throw new Error('Failed to search users')
         }
-        
+
         const data = await response.json()
-        
+
         // Filter out users who are already members
-        const filteredResults = data.users.filter((user: UserSearchResult) => 
+        const filteredResults = data.users.filter((user: UserSearchResult) =>
           !members.some(member => member.id === user.id)
         )
-        
+
         setSearchResults(filteredResults)
       } catch (error) {
         console.error('Error searching users:', error)
@@ -101,49 +134,53 @@ export default function RoomMembersPage() {
         setIsSearching(false)
       }
     }
-    
+
     const debounceTimer = setTimeout(searchUsers, 300)
-    
+
     return () => {
       clearTimeout(debounceTimer)
     }
-  }, [searchQuery, members])
-  
+  }, [searchQuery, members, firebaseReady, authenticatedFetch, router])
+
   const handleSearchFocus = () => {
     setShowDropdown(true)
   }
-  
+
   const handleUserSelect = (user: UserSearchResult) => {
     setSelectedUser(user)
     setSearchQuery(`${user.name} (${user.email})`)
     setShowDropdown(false)
   }
-  
+
   const handleAddMember = async () => {
     if (!selectedUser) {
       setError('Please select a user to add')
       return
     }
-    
+
     try {
       setIsAddingMember(true)
-      
-      const response = await fetch(`/api/groups/${roomId}/members`, {
+
+      const response = await authenticatedFetch(`/api/groups/${roomId}/members`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({ userId: selectedUser.id }),
       })
-      
+
+      if (response.status === 401) {
+        await signOut(auth)
+        localStorage.removeItem('user')
+        router.push('/login')
+        return
+      }
+
       if (!response.ok) {
         const data = await response.json()
         throw new Error(data.error || 'Failed to add member')
       }
-      
+
       // Add the new member to the list
       setMembers(prev => [...prev, selectedUser])
-      
+
       // Clear the input and selection
       setSearchQuery('')
       setSelectedUser(null)
@@ -154,21 +191,28 @@ export default function RoomMembersPage() {
       setIsAddingMember(false)
     }
   }
-  
+
   const handleRemoveMember = async (memberId: string) => {
     if (!confirm('Are you sure you want to remove this member?')) {
       return
     }
-    
+
     try {
-      const response = await fetch(`/api/groups/${roomId}/members/${memberId}`, {
+      const response = await authenticatedFetch(`/api/groups/${roomId}/members/${memberId}`, {
         method: 'DELETE',
       })
-      
+
+      if (response.status === 401) {
+        await signOut(auth)
+        localStorage.removeItem('user')
+        router.push('/login')
+        return
+      }
+
       if (!response.ok) {
         throw new Error('Failed to remove member')
       }
-      
+
       // Remove the member from the list
       setMembers(prev => prev.filter(member => member.id !== memberId))
     } catch (error) {
@@ -176,15 +220,15 @@ export default function RoomMembersPage() {
       setError('Failed to remove member. Please try again.')
     }
   }
-  
+
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 transition-colors">
-      <Header 
-        title={`${roomName} - Members`} 
-        showBackButton={true} 
+      <Header
+        title={`${roomName} - Travelers`}
+        showBackButton={true}
         backUrl={`/room/${roomId}`}
       />
-      
+
       <main className="max-w-3xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
         {error && (
           <div className="mb-6 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-md">
@@ -194,7 +238,7 @@ export default function RoomMembersPage() {
 
         {/* Add Member Form */}
         <div className="mb-8 bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-3">Add Member</h2>
+          <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-3">Add Traveler</h2>
           <div className="relative" ref={searchRef}>
             <div className="flex items-center">
               <div className="relative flex-1">
@@ -223,7 +267,7 @@ export default function RoomMembersPage() {
                 )}
               </button>
             </div>
-            
+
             {/* Search Results Dropdown */}
             {showDropdown && (
               <div className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
@@ -238,8 +282,8 @@ export default function RoomMembersPage() {
                 ) : (
                   <ul className="divide-y divide-gray-200 dark:divide-gray-600">
                     {searchResults.map(user => (
-                      <li 
-                        key={user.id} 
+                      <li
+                        key={user.id}
                         className="p-3 hover:bg-gray-100 dark:hover:bg-gray-600 cursor-pointer"
                         onClick={() => handleUserSelect(user)}
                       >
@@ -260,16 +304,16 @@ export default function RoomMembersPage() {
             )}
           </div>
           <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
-            Search for users by name or email to add them to this room.
+            Search for users by name or email to add them to this trip.
           </p>
         </div>
-        
+
         {/* Members List */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            <h2 className="text-lg font-medium text-gray-900 dark:text-white">Members ({members.length})</h2>
+            <h2 className="text-lg font-medium text-gray-900 dark:text-white">Travelers ({members.length})</h2>
           </div>
-          
+
           {isLoading ? (
             <div className="p-6 text-center">
               <p className="text-gray-500 dark:text-gray-400">Loading members...</p>
@@ -295,6 +339,7 @@ export default function RoomMembersPage() {
                     onClick={() => handleRemoveMember(member.id)}
                     className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-full"
                     aria-label={`Remove ${member.name}`}
+                    disabled
                   >
                     <FaTrash />
                   </button>

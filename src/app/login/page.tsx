@@ -4,44 +4,61 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ThemeToggle from '@/components/ThemeToggle'
+import { auth, googleProvider } from '@/lib/firebase.config'
+import { signInWithPopup } from 'firebase/auth'
+import { FcGoogle } from 'react-icons/fc'
 
 export default function LoginPage() {
   const router = useRouter()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleGoogleSignIn = async () => {
     setError('')
     setIsLoading(true)
 
     try {
-      // In a real app, you would validate credentials with your backend
-      const response = await fetch('/api/auth/login', {
+      // Sign in with Google popup
+      const result = await signInWithPopup(auth, googleProvider)
+      const user = result.user
+
+      // Sync user with our backend
+      const response = await fetch('/api/auth/google-signin', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({
+          uid: user.uid,
+          email: user.email,
+          name: user.displayName || 'User',
+          provider: 'google'
+        }),
       })
 
       if (!response.ok) {
         const data = await response.json()
-        throw new Error(data.message || 'Login failed')
+        throw new Error(data.error || 'Authentication failed')
       }
 
       const userData = await response.json()
-      
+
       // Store user data in localStorage
       localStorage.setItem('user', JSON.stringify(userData.user))
-      
+
       // Redirect to dashboard
       router.push('/dashboard')
-    } catch (error) {
-      console.error('Login error:', error)
-      setError(error instanceof Error ? error.message : 'Login failed. Please try again.')
+    } catch (error: any) {
+      console.error('Google Sign-In error:', error)
+
+      // Handle specific Firebase errors
+      if (error.code === 'auth/popup-closed-by-user') {
+        setError('Sign-in cancelled. Please try again.')
+      } else if (error.code === 'auth/popup-blocked') {
+        setError('Pop-up blocked. Please allow pop-ups for this site.')
+      } else {
+        setError(error.message || 'Sign-in failed. Please try again.')
+      }
     } finally {
       setIsLoading(false)
     }
@@ -52,16 +69,13 @@ export default function LoginPage() {
       <div className="absolute top-4 right-4">
         <ThemeToggle />
       </div>
-      
+
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900 dark:text-white">
           Sign in to your account
         </h2>
         <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-400">
-          Or{' '}
-          <Link href="/register" className="font-medium text-blue-600 dark:text-blue-400 hover:text-blue-500">
-            create a new account
-          </Link>
+          Use your Google account to continue
         </p>
       </div>
 
@@ -72,76 +86,36 @@ export default function LoginPage() {
               <p className="text-sm text-red-700 dark:text-red-200">{error}</p>
             </div>
           )}
-          
-          <form className="space-y-6" onSubmit={handleSubmit}>
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Email address
-              </label>
-              <div className="mt-1">
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="appearance-none block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                />
+
+          <div className="space-y-4">
+            <button
+              onClick={handleGoogleSignIn}
+              disabled={isLoading}
+              className="w-full flex items-center justify-center gap-3 py-3 px-4 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <FcGoogle className="text-2xl" />
+              <span className="text-sm font-medium">
+                {isLoading ? 'Signing in...' : 'Sign in with Google'}
+              </span>
+            </button>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-300 dark:border-gray-600" />
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-2 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">
+                  Secure authentication powered by Google
+                </span>
               </div>
             </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Password
-              </label>
-              <div className="mt-1">
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="appearance-none block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                />
-              </div>
+            <div className="text-center text-xs text-gray-500 dark:text-gray-400">
+              By signing in, you agree to our Terms of Service and Privacy Policy
             </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <input
-                  id="remember-me"
-                  name="remember-me"
-                  type="checkbox"
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
-                  Remember me
-                </label>
-              </div>
-
-              <div className="text-sm">
-                <Link href="/forgot-password" className="font-medium text-blue-600 dark:text-blue-400 hover:text-blue-500">
-                  Forgot your password?
-                </Link>
-              </div>
-            </div>
-
-            <div>
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-blue-400 dark:disabled:bg-blue-800"
-              >
-                {isLoading ? 'Signing in...' : 'Sign in'}
-              </button>
-            </div>
-          </form>
+          </div>
         </div>
       </div>
     </div>
   )
-} 
+}

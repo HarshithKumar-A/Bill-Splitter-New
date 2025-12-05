@@ -5,16 +5,22 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { FaArrowLeft } from 'react-icons/fa'
 import { User } from '@prisma/client'
-import { v4 as uuidv4 } from 'uuid'
 import Header from '@/components/Header'
+import { useApiAuth } from '@/hooks/useApiAuth'
+import { auth } from '@/lib/firebase.config'
+import { signOut, onAuthStateChanged } from 'firebase/auth'
 
-// Expense categories
+// Travel-specific expense categories
 const expenseCategories = [
-  { id: 'food', name: 'Food & Drinks' },
-  { id: 'accommodation', name: 'Accommodation' },
-  { id: 'transportation', name: 'Transportation' },
-  { id: 'activities', name: 'Activities' },
-  { id: 'other', name: 'Other' }
+  { id: 'accommodation', name: '🏨 Accommodation', icon: '🏨' },
+  { id: 'transportation', name: '✈️ Transportation', icon: '✈️' },
+  { id: 'food', name: '🍽️ Food & Dining', icon: '🍽️' },
+  { id: 'activities', name: '🎫 Activities & Entertainment', icon: '🎫' },
+  { id: 'shopping', name: '🛍️ Shopping & Souvenirs', icon: '🛍️' },
+  { id: 'medical', name: '🏥 Medical/Emergency', icon: '🏥' },
+  { id: 'communication', name: '📱 Communication', icon: '📱' },
+  { id: 'gear', name: '🎒 Gear & Equipment', icon: '🎒' },
+  { id: 'other', name: '💰 Miscellaneous', icon: '💰' }
 ]
 
 interface MemberShare {
@@ -29,6 +35,7 @@ export default function NewSplitPage() {
   const params = useParams()
   const router = useRouter()
   const roomId = params.id as string
+  const { authenticatedFetch } = useApiAuth()
 
   // Form state
   const [title, setTitle] = useState('')
@@ -44,33 +51,45 @@ export default function NewSplitPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [users, setUsers] = useState<User[]>([])
   const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null)
+  const [firebaseReady, setFirebaseReady] = useState(false)
 
-  // Initialize current user and member shares
+  // Wait for Firebase auth to initialize
   useEffect(() => {
-    // Check if user is logged in
-    const userData = localStorage.getItem('user')
-    if (!userData) {
-      router.push('/login')
-      return
-    }
-
-    setCurrentUser(JSON.parse(userData))
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        setFirebaseReady(true)
+        const userData = localStorage.getItem('user')
+        if (userData) {
+          setCurrentUser(JSON.parse(userData))
+        }
+      } else {
+        router.push('/login')
+      }
+    })
+    return () => unsubscribe()
   }, [router])
 
   useEffect(() => {
-    if (!currentUser) return
+    if (!currentUser || !firebaseReady) return
 
     const fetchGroupMembers = async () => {
       try {
         setIsLoading(true)
-        const response = await fetch(`/api/groups/${roomId}`)
-        
+        const response = await authenticatedFetch(`/api/groups/${roomId}`)
+
+        if (response.status === 401) {
+          await signOut(auth)
+          localStorage.removeItem('user')
+          router.push('/login')
+          return
+        }
+
         if (!response.ok) {
           throw new Error('Failed to fetch group members')
         }
-        
+
         const data = await response.json()
-        
+
         // Initialize member shares
         const initialMemberShares = data.members.map((member: { id: string, name: string }) => ({
           memberId: member.id,
@@ -79,17 +98,17 @@ export default function NewSplitPage() {
           isIncluded: true,
           userEntered: false
         }))
-        
+
         setMemberShares(initialMemberShares)
         setUsers(data.members)
-        
+
         // Set default paidBy to current user if they're a member
         if (data.members.some((member: { id: string }) => member.id === currentUser.id)) {
           setPaidBy(currentUser.id)
         } else if (data.members.length > 0) {
           setPaidBy(data.members[0].id)
         }
-        
+
       } catch (error) {
         console.error('Error fetching group members:', error)
         setValidationError('Failed to load group members')
@@ -99,13 +118,13 @@ export default function NewSplitPage() {
     }
 
     fetchGroupMembers()
-  }, [roomId, currentUser])
+  }, [roomId, currentUser, firebaseReady, authenticatedFetch, router])
 
   // Handle total amount change and auto-split
   const handleTotalAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newAmount = e.target.value
     setTotalAmount(newAmount)
-    
+
     if (autoSplit) {
       updateAutoSplitAmounts(newAmount)
     }
@@ -120,15 +139,15 @@ export default function NewSplitPage() {
       })))
       return
     }
-    
+
     const totalValue = parseFloat(amount)
     if (isNaN(totalValue)) return
-    
+
     const includedMembers = memberShares.filter(member => member.isIncluded)
     if (includedMembers.length === 0) return
-    
+
     const amountPerPerson = (totalValue / includedMembers.length).toFixed(2)
-    
+
     setMemberShares(prev => prev.map(share => ({
       ...share,
       amount: share.isIncluded ? amountPerPerson : '0.00',
@@ -140,7 +159,7 @@ export default function NewSplitPage() {
   const handleAutoSplitToggle = () => {
     const newAutoSplit = !autoSplit
     setAutoSplit(newAutoSplit)
-    
+
     if (newAutoSplit && totalAmount) {
       updateAutoSplitAmounts(totalAmount)
     }
@@ -148,14 +167,14 @@ export default function NewSplitPage() {
 
   // Handle member inclusion toggle
   const handleMemberInclusionToggle = (memberId: string) => {
-    const updatedShares = memberShares.map(share => 
-      share.memberId === memberId 
+    const updatedShares = memberShares.map(share =>
+      share.memberId === memberId
         ? { ...share, isIncluded: !share.isIncluded, amount: !share.isIncluded ? '' : share.amount }
         : share
     )
-    
+
     setMemberShares(updatedShares)
-    
+
     // Recalculate auto-split if enabled
     if (autoSplit && totalAmount) {
       const includedMembers = updatedShares.filter(member => member.isIncluded)
@@ -163,7 +182,7 @@ export default function NewSplitPage() {
         const totalValue = parseFloat(totalAmount)
         if (!isNaN(totalValue)) {
           const amountPerPerson = (totalValue / includedMembers.length).toFixed(2)
-          
+
           setMemberShares(updatedShares.map(share => ({
             ...share,
             amount: share.isIncluded ? amountPerPerson : '0.00',
@@ -177,43 +196,43 @@ export default function NewSplitPage() {
   // Handle individual share amount change
   const handleShareAmountChange = (memberId: string, amount: string) => {
     // Update the specific member's share
-    const updatedShares = memberShares.map(share => 
-      share.memberId === memberId 
+    const updatedShares = memberShares.map(share =>
+      share.memberId === memberId
         ? { ...share, amount, userEntered: true }
         : share
     )
-    
+
     setMemberShares(updatedShares)
-    
+
     // If auto-split is enabled, redistribute the remaining amount among other included members
     if (autoSplit && totalAmount) {
       const totalValue = parseFloat(totalAmount)
       if (isNaN(totalValue)) return
-      
+
       // Get all included members except the one being manually edited
       const otherIncludedMembers = updatedShares.filter(
         share => share.isIncluded && share.memberId !== memberId
       )
-      
+
       if (otherIncludedMembers.length > 0) {
         // Calculate total of user-entered amounts
         const userEnteredTotal = updatedShares
           .filter(share => share.userEntered && share.isIncluded)
           .reduce((sum, share) => sum + (parseFloat(share.amount) || 0), 0)
-        
+
         // Calculate remaining amount to distribute
         const remainingAmount = totalValue - userEnteredTotal
-        
+
         // Count non-user-entered members
         const nonUserEnteredMembers = updatedShares.filter(
           share => !share.userEntered && share.isIncluded
         )
-        
+
         if (nonUserEnteredMembers.length > 0 && remainingAmount > 0) {
           // Distribute remaining amount evenly
           const amountPerPerson = (remainingAmount / nonUserEnteredMembers.length).toFixed(2)
-          
-          setMemberShares(updatedShares.map(share => 
+
+          setMemberShares(updatedShares.map(share =>
             share.isIncluded && !share.userEntered
               ? { ...share, amount: amountPerPerson }
               : share
@@ -221,7 +240,7 @@ export default function NewSplitPage() {
         }
       }
     }
-    
+
     // Check if total matches
     validateTotalAmount(updatedShares)
   }
@@ -232,14 +251,14 @@ export default function NewSplitPage() {
       setTotalError(false)
       return
     }
-    
+
     const totalValue = parseFloat(totalAmount)
     if (isNaN(totalValue)) return
-    
+
     const sharesTotal = shares
       .filter(share => share.isIncluded)
       .reduce((sum, share) => sum + (parseFloat(share.amount) || 0), 0)
-    
+
     // Allow for small floating point differences (less than 1 cent)
     const difference = Math.abs(totalValue - sharesTotal)
     setTotalError(difference > 0.01)
@@ -249,44 +268,44 @@ export default function NewSplitPage() {
   const validateForm = () => {
     setValidationError('')
     setTotalError(false)
-    
+
     if (!title.trim()) {
       setValidationError('Please enter an expense title')
       return false
     }
-    
+
     if (!totalAmount || parseFloat(totalAmount) <= 0) {
       setValidationError('Please enter a valid total amount')
       return false
     }
-    
+
     if (!category) {
       setValidationError('Please select a category')
       return false
     }
-    
+
     if (!paidBy) {
       setValidationError('Please select who paid')
       return false
     }
-    
+
     const includedMembers = memberShares.filter(m => m.isIncluded)
     if (includedMembers.length === 0) {
       setValidationError('Please include at least one member in the split')
       return false
     }
-    
+
     // Check if all included members have valid amounts
     const invalidShares = includedMembers.filter(m => !m.amount || parseFloat(m.amount) < 0)
     if (invalidShares.length > 0) {
       setValidationError('All included members must have valid amounts')
       return false
     }
-    
+
     // Verify that the sum of shares equals the total amount
     const sharesTotal = includedMembers.reduce((sum, m) => sum + parseFloat(m.amount || '0'), 0)
     const total = parseFloat(totalAmount)
-    
+
     // Allow for small floating point differences (less than 1 cent)
     if (Math.abs(sharesTotal - total) > 0.01) {
       setTotalError(true)
@@ -295,23 +314,23 @@ export default function NewSplitPage() {
         return false
       }
     }
-    
+
     return true
   }
 
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!validateForm()) {
       return
     }
-    
+
     try {
       setIsSaving(true)
-      
+
       const includedMembers = memberShares.filter(m => m.isIncluded)
-      
+
       const expenseData = {
         title,
         amount: parseFloat(totalAmount),
@@ -323,23 +342,27 @@ export default function NewSplitPage() {
           amount: parseFloat(member.amount)
         }))
       }
-      
-      const response = await fetch('/api/expenses', {
+
+      const response = await authenticatedFetch('/api/expenses', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify(expenseData)
       })
-      
+
+      if (response.status === 401) {
+        await signOut(auth)
+        localStorage.removeItem('user')
+        router.push('/login')
+        return
+      }
+
       if (!response.ok) {
         const errorData = await response.json()
         throw new Error(errorData.error || 'Failed to create expense')
       }
-      
+
       // Redirect to room page on success
       router.push(`/room/${roomId}`)
-      
+
     } catch (error) {
       console.error('Error creating expense:', error)
       setValidationError('Failed to create expense. Please try again.')
@@ -351,18 +374,18 @@ export default function NewSplitPage() {
   // Save as draft (to localStorage)
   const handleSaveAsDraft = (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!validateForm()) {
       return
     }
-    
+
     try {
       setIsSaving(true)
-      
+
       const includedMembers = memberShares.filter(m => m.isIncluded)
-      
+
       const draftExpense = {
-        id: uuidv4(), // Generate a unique ID for the draft
+        id: Math.random().toString(), // Generate a unique ID for the draft
         title,
         amount: parseFloat(totalAmount),
         category,
@@ -376,18 +399,18 @@ export default function NewSplitPage() {
           amount: parseFloat(member.amount)
         }))
       }
-      
+
       // Get existing drafts from localStorage
       const existingDrafts = JSON.parse(localStorage.getItem('unpublished_items') || '[]')
-      
+
       // Add new draft to the array
       const updatedDrafts = [...existingDrafts, draftExpense]
-      
+
       // Save back to localStorage
       localStorage.setItem('unpublished_items', JSON.stringify(updatedDrafts))
-      
+
       router.push(`/room/${roomId}`)
-      
+
     } catch (error) {
       console.error('Error saving draft:', error)
       setValidationError('Failed to save draft. Please try again.')
@@ -409,9 +432,9 @@ export default function NewSplitPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 transition-colors">
-      <Header 
-        title="Create New Split" 
-        showBackButton={true} 
+      <Header
+        title="Create New Split"
+        showBackButton={true}
         backUrl={`/room/${roomId}`}
       />
 
@@ -433,7 +456,7 @@ export default function NewSplitPage() {
                 required
               />
             </div>
-            
+
             {/* Total Amount */}
             <div className="mb-6">
               <label htmlFor="totalAmount" className="block text-sm font-medium text-gray-700 mb-1">
@@ -451,7 +474,7 @@ export default function NewSplitPage() {
                 required
               />
             </div>
-            
+
             {/* Category */}
             <div className="mb-6">
               <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
@@ -470,7 +493,7 @@ export default function NewSplitPage() {
                 ))}
               </select>
             </div>
-            
+
             {/* Paid By */}
             <div className="mb-6">
               <label htmlFor="paidBy" className="block text-sm font-medium text-gray-700 mb-1">
@@ -489,7 +512,7 @@ export default function NewSplitPage() {
                 ))}
               </select>
             </div>
-            
+
             {/* Auto Split Toggle */}
             <div className="flex items-center mb-6">
               <input
@@ -503,11 +526,11 @@ export default function NewSplitPage() {
                 Auto-split amount evenly among included members
               </label>
             </div>
-            
+
             {/* Member Shares */}
             <div className="mb-6">
               <h3 className="text-sm font-medium text-gray-700 mb-3">Individual Shares</h3>
-              
+
               {totalError && (
                 <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
                   <p className="text-sm text-yellow-700">
@@ -527,7 +550,7 @@ export default function NewSplitPage() {
                   </div>
                 </div>
               )}
-              
+
               <div className="border border-gray-300 rounded-md overflow-hidden">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
@@ -576,14 +599,14 @@ export default function NewSplitPage() {
                 </table>
               </div>
             </div>
-            
+
             {/* Error message */}
             {validationError && (
               <div className="mb-6 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-md">
                 <p className="text-sm text-red-700 dark:text-red-200">{validationError}</p>
               </div>
             )}
-            
+
             {/* Submit buttons */}
             <div className="flex justify-end space-x-3">
               <Link

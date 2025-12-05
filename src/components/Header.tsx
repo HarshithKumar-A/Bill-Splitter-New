@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FaArrowLeft, FaSignOutAlt, FaUser } from 'react-icons/fa'
 import ThemeToggle from './ThemeToggle'
+import { auth } from '@/lib/firebase.config'
+import { signOut } from 'firebase/auth'
 
 interface HeaderProps {
   title: string
@@ -29,9 +31,22 @@ export default function Header({
     }
   }, [])
 
-  const handleLogout = () => {
-    localStorage.removeItem('user')
-    router.push('/')
+  const handleLogout = async () => {
+    try {
+      // Sign out from Firebase
+      await signOut(auth)
+
+      // Clear localStorage
+      localStorage.removeItem('user')
+
+      // Redirect to home
+      router.push('/')
+    } catch (error) {
+      console.error('Logout error:', error)
+      // Still clear local data even if Firebase sign out fails
+      localStorage.removeItem('user')
+      router.push('/')
+    }
   }
 
   // Get user initials for avatar

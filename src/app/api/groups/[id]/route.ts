@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/db'
+import { getAuthUser, unauthorizedResponse, forbiddenResponse } from '@/lib/auth'
 
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
+    // Verify authentication
+    const authUser = await getAuthUser(request)
+
     const groupId = params.id
 
     if (!groupId) {
@@ -42,6 +46,12 @@ export async function GET(
       )
     }
 
+    // Verify user is a member of this group
+    const isMember = group.members.some(member => member.userId === authUser.id)
+    if (!isMember) {
+      return forbiddenResponse('You are not a member of this group')
+    }
+
     // Format the response
     const formattedGroup = {
       id: group.id,
@@ -55,8 +65,17 @@ export async function GET(
     }
 
     return NextResponse.json(formattedGroup)
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching group:', error)
+
+    if (error.message?.includes('Unauthorized')) {
+      return unauthorizedResponse(error.message)
+    }
+
+    if (error.message?.includes('Forbidden')) {
+      return forbiddenResponse(error.message)
+    }
+
     return NextResponse.json(
       { error: 'Something went wrong' },
       { status: 500 }

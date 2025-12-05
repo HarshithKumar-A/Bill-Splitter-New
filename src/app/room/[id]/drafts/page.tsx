@@ -5,6 +5,9 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { FaTrash, FaCloudUploadAlt } from 'react-icons/fa'
 import Header from '@/components/Header'
+import { useApiAuth } from '@/hooks/useApiAuth'
+import { auth } from '@/lib/firebase.config'
+import { signOut } from 'firebase/auth'
 
 interface DraftShare {
   userId: string;
@@ -28,11 +31,12 @@ export default function DraftsPage() {
   const params = useParams()
   const router = useRouter()
   const roomId = params.id as string
-  
+  const { authenticatedFetch } = useApiAuth()
+
   const [drafts, setDrafts] = useState<DraftExpense[]>([])
   const [isPublishing, setIsPublishing] = useState<string | null>(null)
   const [error, setError] = useState('')
-  
+
   useEffect(() => {
     // Load drafts from localStorage
     const loadDrafts = () => {
@@ -46,12 +50,12 @@ export default function DraftsPage() {
         setError('Failed to load drafts')
       }
     }
-    
+
     loadDrafts()
-    
+
     // Add event listener to refresh drafts if localStorage changes
     window.addEventListener('storage', loadDrafts)
-    
+
     return () => {
       window.removeEventListener('storage', loadDrafts)
     }
@@ -64,18 +68,18 @@ export default function DraftsPage() {
 
     handleDeleteDraft(draftId)
   }
-  
-  const handleDeleteDraft = (draftId: string) => {    
+
+  const handleDeleteDraft = (draftId: string) => {
     try {
       // Get all drafts
       const allDrafts = JSON.parse(localStorage.getItem('unpublished_items') || '[]')
-      
+
       // Remove the selected draft
       const updatedDrafts = allDrafts.filter((draft: DraftExpense) => draft.id !== draftId)
-      
+
       // Save back to localStorage
       localStorage.setItem('unpublished_items', JSON.stringify(updatedDrafts))
-      
+
       // Update state
       setDrafts(prev => prev.filter(draft => draft.id !== draftId))
     } catch (error) {
@@ -83,11 +87,11 @@ export default function DraftsPage() {
       setError('Failed to delete draft')
     }
   }
-  
+
   const handlePublishDraft = async (draft: DraftExpense) => {
     try {
       setIsPublishing(draft.id)
-      
+
       // Format the data for the API
       const expenseData = {
         title: draft.title,
@@ -100,24 +104,28 @@ export default function DraftsPage() {
           amount: share.amount
         }))
       }
-      
+
       // Send to API
-      const response = await fetch('/api/expenses', {
+      const response = await authenticatedFetch('/api/expenses', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify(expenseData)
       })
-      
+
+      if (response.status === 401) {
+        await signOut(auth)
+        localStorage.removeItem('user')
+        router.push('/login')
+        return
+      }
+
       if (!response.ok) {
         const errorData = await response.json()
         throw new Error(errorData.error || 'Failed to publish draft')
       }
-      
+
       // Delete from drafts on success
       handleDeleteDraft(draft.id)
-      
+
       // Show success message
       alert('Draft published successfully!')
     } catch (error) {
@@ -127,23 +135,22 @@ export default function DraftsPage() {
       setIsPublishing(null)
     }
   }
-  
+
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 transition-colors">
-      <Header 
-        title="Draft Expenses" 
-        showBackButton={true} 
+      <Header
+        title="Draft Expenses"
+        showBackButton={true}
         backUrl={`/room/${roomId}`}
-        showCurrencyInfo={true}
       />
-      
+
       <main className="max-w-3xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
         {error && (
           <div className="mb-6 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-md">
             <p className="text-sm text-red-700 dark:text-red-200">{error}</p>
           </div>
         )}
-        
+
         {drafts.length > 0 ? (
           <div className="space-y-4">
             {drafts.map(draft => (
@@ -165,7 +172,7 @@ export default function DraftsPage() {
                       </p>
                     </div>
                   </div>
-                  
+
                   <div className="mt-4 flex justify-end space-x-2">
                     <button
                       onClick={() => deleteDraft(draft.id)}
@@ -194,7 +201,7 @@ export default function DraftsPage() {
         ) : (
           <div className="text-center py-10">
             <p className="text-gray-500 dark:text-gray-400">No draft expenses found.</p>
-            <Link 
+            <Link
               href={`/room/${roomId}/split/new`}
               className="mt-4 inline-block px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
             >

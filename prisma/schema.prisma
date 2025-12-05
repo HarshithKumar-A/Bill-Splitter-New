@@ -11,24 +11,36 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  password  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  name       String
+  email      String   @unique
+  password   String?  // Optional: null for OAuth users
+  provider   String   @default("credentials") // "credentials" or "google"
+  providerId String?  // Google UID or other OAuth provider ID
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   // Relations
   groups    GroupMember[]
   expenses  Expense[]     @relation("PaidBy")
   shares    ExpenseShare[]
+
+  @@index([email])
+  @@index([providerId])
 }
 
 model Group {
-  id        String   @id @default(cuid())
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  name        String
+  destination String   @default("Not specified")
+  description String?
+  startDate   DateTime @default(now())
+  endDate     DateTime @default(now())
+  currency    String   @default("INR")
+  status      String   @default("ACTIVE") // PLANNING, ACTIVE, COMPLETED, ARCHIVED
+  coverImage  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Relations
   members   GroupMember[]
