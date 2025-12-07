@@ -3,6 +3,8 @@ import './globals.css'
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import PwaInstallModal from '@/components/PwaInstallModal'
+import { OfflineProvider } from '@/modules/offline/OfflineContext'
+import OfflineIndicator from '@/modules/offline/OfflineIndicator'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -31,10 +33,13 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <ThemeProvider>
-          <main className="min-h-screen bg-gray-100">
-            {children}
-            <PwaInstallModal />
-          </main>
+          <OfflineProvider>
+            <main className="min-h-screen bg-gray-100">
+              <OfflineIndicator />
+              {children}
+              <PwaInstallModal />
+            </main>
+          </OfflineProvider>
         </ThemeProvider>
       </body>
     </html>

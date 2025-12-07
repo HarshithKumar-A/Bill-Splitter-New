@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { FaArrowLeft } from 'react-icons/fa'
@@ -9,6 +9,8 @@ import Header from '@/components/Header'
 import { useApiAuth } from '@/hooks/useApiAuth'
 import { auth } from '@/lib/firebase.config'
 import { signOut, onAuthStateChanged } from 'firebase/auth'
+import { useOfflineData } from '@/modules/offline/useOfflineData'
+import { OfflineStorage } from '@/modules/offline/offline-storage'
 
 // Travel-specific expense categories
 const expenseCategories = [
@@ -47,7 +49,6 @@ export default function NewSplitPage() {
   const [validationError, setValidationError] = useState('')
   const [ignoreTotalError, setIgnoreTotalError] = useState(false)
   const [totalError, setTotalError] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [users, setUsers] = useState<User[]>([])
   const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null)
@@ -69,56 +70,64 @@ export default function NewSplitPage() {
     return () => unsubscribe()
   }, [router])
 
+  const fetchGroupMembers = useCallback(async () => {
+    const response = await authenticatedFetch(`/api/groups/${roomId}`)
+
+    if (response.status === 401) {
+      await signOut(auth)
+      localStorage.removeItem('user')
+      router.push('/login')
+      throw new Error('Unauthorized')
+    }
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch group members')
+    }
+
+    return await response.json()
+  }, [authenticatedFetch, roomId, router])
+
+  const { data: groupData, isLoading, error } = useOfflineData<any>({
+    key: OfflineStorage.KEYS.GROUP_MEMBERS(roomId),
+    fetchFn: fetchGroupMembers,
+  })
+
   useEffect(() => {
-    if (!currentUser || !firebaseReady) return
+    if (groupData) {
+      const members = groupData.members || []
+      setUsers(members)
 
-    const fetchGroupMembers = async () => {
-      try {
-        setIsLoading(true)
-        const response = await authenticatedFetch(`/api/groups/${roomId}`)
-
-        if (response.status === 401) {
-          await signOut(auth)
-          localStorage.removeItem('user')
-          router.push('/login')
-          return
-        }
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch group members')
-        }
-
-        const data = await response.json()
-
-        // Initialize member shares
-        const initialMemberShares = data.members.map((member: { id: string, name: string }) => ({
+      // Initialize member shares if not already done (or if members changed significantly?)
+      // We should only reset if memberShares is empty to preserve user input if they navigate away and back?
+      // But this is a new split page, so always fresh.
+      if (memberShares.length === 0) {
+        const initialMemberShares = members.map((member: { id: string, name: string }) => ({
           memberId: member.id,
           name: member.name,
           amount: '',
           isIncluded: true,
           userEntered: false
         }))
-
         setMemberShares(initialMemberShares)
-        setUsers(data.members)
+      }
 
-        // Set default paidBy to current user if they're a member
-        if (data.members.some((member: { id: string }) => member.id === currentUser.id)) {
+      // Set default paidBy
+      if (!paidBy && currentUser) {
+        if (members.some((member: { id: string }) => member.id === currentUser.id)) {
           setPaidBy(currentUser.id)
-        } else if (data.members.length > 0) {
-          setPaidBy(data.members[0].id)
+        } else if (members.length > 0) {
+          setPaidBy(members[0].id)
         }
-
-      } catch (error) {
-        console.error('Error fetching group members:', error)
-        setValidationError('Failed to load group members')
-      } finally {
-        setIsLoading(false)
       }
     }
+  }, [groupData, currentUser, paidBy, memberShares.length])
 
-    fetchGroupMembers()
-  }, [roomId, currentUser, firebaseReady, authenticatedFetch, router])
+  useEffect(() => {
+    if (error) {
+      console.error('Error fetching group members:', error)
+      setValidationError('Failed to load group members')
+    }
+  }, [error])
 
   // Handle total amount change and auto-split
   const handleTotalAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
