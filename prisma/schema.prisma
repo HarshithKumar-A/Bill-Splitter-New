@@ -61,20 +61,21 @@ model GroupMember {
 }
 
 model Expense {
-  id          String   @id @default(cuid())
-  title       String
-  amount      Float
-  category    String
-  date        DateTime @default(now())
-  groupId     String
-  paidById    String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(cuid())
+  title         String
+  amount        Float
+  category      String
+  date          DateTime @default(now())
+  groupId       String
+  paidById      String
+  paidByTheirOwn Boolean @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   // Relations
-  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  paidBy      User     @relation("PaidBy", fields: [paidById], references: [id])
-  shares      ExpenseShare[]
+  group         Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  paidBy        User     @relation("PaidBy", fields: [paidById], references: [id])
+  shares        ExpenseShare[]
 }
 
 model ExpenseShare {

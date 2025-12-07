@@ -331,12 +331,16 @@ export default function NewSplitPage() {
 
       const includedMembers = memberShares.filter(m => m.isIncluded)
 
+      // Check if "Their Own" is selected
+      const isTheirOwn = paidBy === 'THEIR_OWN'
+
       const expenseData = {
         title,
         amount: parseFloat(totalAmount),
         category,
         groupId: roomId,
-        paidById: paidBy,
+        paidById: isTheirOwn ? currentUser!.id : paidBy, // Use current user ID when "Their Own" is selected
+        paidByTheirOwn: isTheirOwn,
         shares: includedMembers.map(member => ({
           userId: member.memberId,
           amount: parseFloat(member.amount)
@@ -384,14 +388,18 @@ export default function NewSplitPage() {
 
       const includedMembers = memberShares.filter(m => m.isIncluded)
 
+      // Check if "Their Own" is selected
+      const isTheirOwn = paidBy === 'THEIR_OWN'
+
       const draftExpense = {
         id: Math.random().toString(), // Generate a unique ID for the draft
         title,
         amount: parseFloat(totalAmount),
         category,
         groupId: roomId,
-        paidById: paidBy,
-        paidByName: memberShares.find(m => m.memberId === paidBy)?.name || 'Unknown',
+        paidById: isTheirOwn ? currentUser!.id : paidBy,
+        paidByName: isTheirOwn ? 'Their Own' : (memberShares.find(m => m.memberId === paidBy)?.name || 'Unknown'),
+        paidByTheirOwn: isTheirOwn,
         date: new Date().toISOString(),
         shares: includedMembers.map(member => ({
           userId: member.memberId,
@@ -443,7 +451,7 @@ export default function NewSplitPage() {
           <form onSubmit={handleSubmit}>
             {/* Title/Description */}
             <div className="mb-6">
-              <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="title" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Title/Description
               </label>
               <input
@@ -459,7 +467,7 @@ export default function NewSplitPage() {
 
             {/* Total Amount */}
             <div className="mb-6">
-              <label htmlFor="totalAmount" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="totalAmount" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Total Amount (₹)
               </label>
               <input
@@ -477,7 +485,7 @@ export default function NewSplitPage() {
 
             {/* Category */}
             <div className="mb-6">
-              <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="category" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Category
               </label>
               <select
@@ -496,7 +504,7 @@ export default function NewSplitPage() {
 
             {/* Paid By */}
             <div className="mb-6">
-              <label htmlFor="paidBy" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="paidBy" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Paid By
               </label>
               <select
@@ -507,6 +515,7 @@ export default function NewSplitPage() {
                 required
               >
                 <option value="">Select who paid</option>
+                <option value="THEIR_OWN">Their Own (Everyone paid for themselves)</option>
                 {users.map(user => (
                   <option key={user.id} value={user.id}>{user.name}</option>
                 ))}
@@ -522,14 +531,14 @@ export default function NewSplitPage() {
                 onChange={handleAutoSplitToggle}
                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
               />
-              <label htmlFor="autoSplit" className="ml-2 block text-sm text-gray-700">
+              <label htmlFor="autoSplit" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
                 Auto-split amount evenly among included members
               </label>
             </div>
 
             {/* Member Shares */}
             <div className="mb-6">
-              <h3 className="text-sm font-medium text-gray-700 mb-3">Individual Shares</h3>
+              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Individual Shares</h3>
 
               {totalError && (
                 <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
@@ -611,7 +620,7 @@ export default function NewSplitPage() {
             <div className="flex justify-end space-x-3">
               <Link
                 href={`/room/${roomId}`}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md"
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md"
               >
                 Cancel
               </Link>

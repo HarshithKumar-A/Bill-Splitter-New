@@ -121,8 +121,11 @@ function calculateSettlement(users: any[], expenses: any[]) {
     balances[user.userId] = { id: user.userId, name: user.user.name, balance: 0 };
   });
 
-  // Compute payments and debts
-  expenses.forEach(expense => {
+  // Filter out "Their Own" expenses from settlement calculation
+  const settlementExpenses = expenses.filter(expense => !expense.paidByTheirOwn);
+
+  // Compute payments and debts (only for non-"Their Own" expenses)
+  settlementExpenses.forEach(expense => {
     const paidBy = expense.paidBy;
     balances[paidBy.id].name = paidBy.name;
     balances[paidBy.id].balance += expense.amount;

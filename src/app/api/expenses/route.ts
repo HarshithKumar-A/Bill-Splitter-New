@@ -69,7 +69,10 @@ export async function GET(request: NextRequest) {
       date: expense.date.toISOString().split('T')[0],
       category: expense.category,
       totalAmount: expense.amount,
-      paidBy: {
+      paidBy: expense.paidByTheirOwn ? {
+        id: null,
+        name: 'Their Own'
+      } : {
         id: expense.paidBy.id,
         name: expense.paidBy.name
       },
@@ -108,7 +111,7 @@ export async function POST(request: NextRequest) {
     // Verify authentication
     const authUser = await getAuthUser(request)
 
-    const { title, amount, category, groupId, paidById, shares } = await request.json()
+    const { title, amount, category, groupId, paidById, shares, paidByTheirOwn = false } = await request.json()
 
     // Validate input
     if (!title || !amount || !category || !groupId || !paidById || !shares || shares.length === 0) {
@@ -179,6 +182,7 @@ export async function POST(request: NextRequest) {
         category,
         groupId,
         paidById,
+        paidByTheirOwn,
         shares: {
           create: shares.map((share: { userId: string, amount: number }) => ({
             userId: share.userId,
