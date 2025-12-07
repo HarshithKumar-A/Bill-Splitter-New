@@ -7,6 +7,7 @@ import Header from '@/components/Header'
 import { useApiAuth } from '@/hooks/useApiAuth'
 import { auth } from '@/lib/firebase.config'
 import { signOut, onAuthStateChanged } from 'firebase/auth'
+import { formatCurrency, formatWithCommas } from '@/lib/currency.lib'
 
 interface Settlement {
   from: {
@@ -113,15 +114,15 @@ export default function SummaryPage() {
         ) : summary ? (
           <div className="space-y-6">
             {/* Total Expenses */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 px-4 sm:px-6">
               <h2 className="text-xl font-medium text-gray-900 dark:text-white mb-2">Total Expenses</h2>
-              <p className="text-3xl font-bold text-gray-900 dark:text-white">
-                ₹{summary.totalExpenses.toFixed(2)}
+              <p className="text-3xl font-bold text-gray-900 dark:text-white break-all">
+                ₹{formatWithCommas(summary.totalExpenses)}
               </p>
             </div>
 
             {/* Category Breakdown */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 px-4 sm:px-6">
               <div className="flex items-center mb-4">
                 <FaChartPie className="text-blue-500 mr-2" />
                 <h2 className="text-xl font-medium text-gray-900 dark:text-white">Category Breakdown</h2>
@@ -135,8 +136,8 @@ export default function SummaryPage() {
                         <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                           {category.category}
                         </span>
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">
-                          ₹{category.amount.toFixed(2)} ({category.percentage.toFixed(1)}%)
+                        <span className="text-sm font-medium text-gray-900 dark:text-white break-all">
+                          ₹{formatCurrency(category.amount)} ({category.percentage.toFixed(1)}%)
                         </span>
                       </div>
                       <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
@@ -154,7 +155,7 @@ export default function SummaryPage() {
             </div>
 
             {/* Settlements */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 px-4 sm:px-6">
               <div className="flex items-center mb-4">
                 <FaExchangeAlt className="text-purple-500 mr-2" />
                 <h2 className="text-xl font-medium text-gray-900 dark:text-white">Settlements</h2>
@@ -163,30 +164,26 @@ export default function SummaryPage() {
               {summary.settlements && summary.settlements.length > 0 ? (
                 <div className="space-y-4">
                   {summary.settlements.map((settlement, index) => (
-                    <div key={index} className="p-4 rounded-lg bg-gray-50 dark:bg-gray-700">
-                      <div className="grid grid-cols-3">
-                        <div className="flex items-center">
+                    <div key={index} className="p-3 py-4 rounded-lg bg-gray-50 dark:bg-gray-700">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center w-[calc(50%-6px)]">
                           <div className="mr-1">
                             <div className="w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center text-sm font-medium">
                               {settlement.from.name.charAt(0).toUpperCase()}
                             </div>
                           </div>
                           <p className="text-xs font-medium text-gray-900 dark:text-white">
-                            {settlement.from.name} {currentUser && settlement.from.id === currentUser.id ? '(You)' : ''}
+                            {currentUser && settlement.from.id === currentUser.id ? 'You' : settlement.from.name.split(" ")[0]}
                           </p>
                         </div>
 
-                        <div className="flex flex-col items-center mx-2">
-                          <FaArrowRight className="text-gray-500 dark:text-gray-400 mb-1" />
-                          <span className="text-sm font-bold text-gray-900 dark:text-white">
-                            ₹{settlement.amount.toFixed(2)}
-                          </span>
-                        </div>
+                        <FaArrowRight className="text-gray-500 dark:text-gray-400 mb-1 w-3 h-3" />
 
-                        <div className="flex items-center justify-end">
+
+                        <div className="flex items-center justify-end w-[calc(50%-6px)]">
                           <div className="mr-1 text-right flex-1">
                             <p className="text-xs font-medium text-gray-900 dark:text-white">
-                              {settlement.to.name} {currentUser && settlement.to.id === currentUser.id ? '(You)' : ''}
+                              {currentUser && settlement.to.id === currentUser.id ? 'You' : settlement.to.name.split(" ")[0]}
                             </p>
                           </div>
                           <div className="w-6 h-6 rounded-full bg-green-500 text-white flex items-center justify-center text-sm font-medium">
@@ -194,6 +191,9 @@ export default function SummaryPage() {
                           </div>
                         </div>
                       </div>
+                      <p className="mt-2 px-6 text-sm font-medium text-gray-900 dark:text-white break-all">
+                        ₹{formatWithCommas(settlement.amount)}
+                      </p>
                     </div>
                   ))}
                 </div>

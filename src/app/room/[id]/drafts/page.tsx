@@ -8,6 +8,7 @@ import Header from '@/components/Header'
 import { useApiAuth } from '@/hooks/useApiAuth'
 import { auth } from '@/lib/firebase.config'
 import { signOut } from 'firebase/auth'
+import { formatCurrency } from '@/lib/currency.lib'
 
 interface DraftShare {
   userId: string;
@@ -168,8 +169,20 @@ export default function DraftsPage() {
                     </div>
                     <div className="text-right">
                       <p className="font-bold text-gray-900 dark:text-white">
-                        ₹{draft.amount.toFixed(2)}
+                        ₹{formatCurrency(draft.amount)}
                       </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 border-t border-gray-100 dark:border-gray-700 pt-2">
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Split details:</p>
+                    <div className="space-y-1">
+                      {draft.shares.map(share => (
+                        <div key={share.userId} className="flex justify-between text-sm">
+                          <span className="text-gray-600 dark:text-gray-300">{share.name.split(' ')[0]}</span>
+                          <span className="text-gray-900 dark:text-white">₹{formatCurrency(share.amount)}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
 

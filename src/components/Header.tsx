@@ -61,7 +61,7 @@ export default function Header({
   }
 
   return (
-    <header className="bg-white dark:bg-gray-800 shadow-sm transition-colors">
+    <header className="bg-white dark:bg-gray-800 shadow-sm transition-colors sticky top-0 left-0 right-0">
       <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex items-center">
         {showBackButton && (
           <Link href={backUrl} className="mr-4 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">

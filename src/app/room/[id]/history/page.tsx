@@ -8,6 +8,7 @@ import Header from '@/components/Header'
 import { useApiAuth } from '@/hooks/useApiAuth'
 import { auth } from '@/lib/firebase.config'
 import { signOut, onAuthStateChanged } from 'firebase/auth'
+import { formatCurrency } from '@/lib/currency.lib'
 
 interface Expense {
   id: string
@@ -185,8 +186,8 @@ export default function HistoryPage() {
                             </p>
                           </div>
                           <div className="flex items-center">
-                            <p className="font-bold text-gray-900 dark:text-white mr-4">
-                              ₹{expense.totalAmount.toFixed(2)}
+                            <p className="font-bold text-gray-900 dark:text-white mr-1 text-sm break-all">
+                              ₹{formatCurrency(expense.totalAmount)}
                             </p>
                             <button
                               onClick={() => handleDeleteClick(expense.id)}
@@ -205,7 +206,7 @@ export default function HistoryPage() {
                               <li key={share.memberId} className="flex justify-between text-sm">
                                 <span className="text-gray-600 dark:text-gray-400">{share.name}</span>
                                 <span className={`${share.isPayer ? 'text-green-600 dark:text-green-400' : 'text-gray-900 dark:text-white'}`}>
-                                  {share.isPayer ? '+' : '-'}₹{share.amount.toFixed(2)}
+                                  {share.isPayer ? '+' : '-'}₹{formatCurrency(share.amount)}
                                 </span>
                               </li>
                             ))}

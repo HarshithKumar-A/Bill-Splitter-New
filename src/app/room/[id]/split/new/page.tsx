@@ -241,8 +241,10 @@ export default function NewSplitPage() {
       }
     }
 
+    console.log(memberShares)
+
     // Check if total matches
-    validateTotalAmount(updatedShares)
+    validateTotalAmount(memberShares)
   }
 
   // Validate that individual shares sum up to total amount
@@ -261,6 +263,7 @@ export default function NewSplitPage() {
 
     // Allow for small floating point differences (less than 1 cent)
     const difference = Math.abs(totalValue - sharesTotal)
+    console.log(totalValue, sharesTotal, difference)
     setTotalError(difference > 0.01)
   }
 
@@ -468,7 +471,7 @@ export default function NewSplitPage() {
             {/* Total Amount */}
             <div className="mb-6">
               <label htmlFor="totalAmount" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Total Amount (₹)
+                Total Amount (₹) (Max 6 digits)
               </label>
               <input
                 id="totalAmount"
@@ -480,6 +483,7 @@ export default function NewSplitPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="0.00"
                 required
+                maxLength={6}
               />
             </div>
 
@@ -564,8 +568,8 @@ export default function NewSplitPage() {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Include
+                      <th scope="col" className="px-0 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+
                       </th>
                       <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Member
@@ -578,17 +582,17 @@ export default function NewSplitPage() {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {memberShares.map(share => (
                       <tr key={share.memberId}>
-                        <td className="px-4 py-2 whitespace-nowrap">
+                        <td className="px-0 ps-2 py-2 whitespace-nowrap">
                           <input
                             type="checkbox"
                             checked={share.isIncluded}
                             onChange={() => handleMemberInclusionToggle(share.memberId)}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            className="h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                           />
                         </td>
-                        <td className="px-4 py-2 whitespace-nowrap">
+                        <td className="px-2 py-2 whitespace-nowrap">
                           <span className="text-sm text-gray-900">
-                            {share.name} {share.memberId === paidBy && '(paid)'}
+                            {share.name.split(" ")[0]} {share.memberId === paidBy && '(paid)'}
                           </span>
                         </td>
                         <td className="px-4 py-2 whitespace-nowrap">
@@ -598,7 +602,7 @@ export default function NewSplitPage() {
                             step="0.01"
                             value={share.amount}
                             onChange={(e) => handleShareAmountChange(share.memberId, e.target.value)}
-                            disabled={!share.isIncluded || (autoSplit && !share.userEntered)}
+                            disabled={!share.isIncluded}
                             className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
                           />
                         </td>
