@@ -80,6 +80,11 @@ export async function GET(
     // Calculate total expenses
     const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0)
 
+    // Calculate current user's expenses (what they paid for)
+    const currentUserExpenses = expenses.reduce((sum, expense) => {
+      return sum + (expense?.shares?.find(share => share?.user?.id === authUser.id)?.amount || 0)
+    }, 0)
+
     // Calculate settlements
     const settlements = calculateSettlement(groupMembers, expenses)
 
@@ -89,6 +94,7 @@ export async function GET(
     return NextResponse.json(
       {
         totalExpenses,
+        currentUserExpenses,
         settlements,
         categoryBreakdown
       },

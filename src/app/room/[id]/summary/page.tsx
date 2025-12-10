@@ -29,6 +29,7 @@ interface CategoryExpense {
 
 interface SummaryData {
   totalExpenses: number
+  currentUserExpenses: number
   settlements: Settlement[]
   categoryBreakdown: CategoryExpense[]
 }
@@ -118,6 +119,14 @@ export default function SummaryPage() {
               <h2 className="text-xl font-medium text-gray-900 dark:text-white mb-2">Total Expenses</h2>
               <p className="text-3xl font-bold text-gray-900 dark:text-white break-all">
                 ₹{formatWithCommas(summary.totalExpenses)}
+              </p>
+            </div>
+
+            {/* Current User Expenses */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 px-4 sm:px-6">
+              <h2 className="text-xl font-medium text-gray-900 dark:text-white mb-2">Your Expenses</h2>
+              <p className="text-3xl font-bold text-blue-600 dark:text-blue-400 break-all">
+                ₹{formatWithCommas(summary.currentUserExpenses)}
               </p>
             </div>
 
