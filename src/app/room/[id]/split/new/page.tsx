@@ -101,8 +101,13 @@ export default function NewSplitPage() {
       setUsers(members)
 
       const planTitle = searchParams.get('title')
+      const detectedAmount = searchParams.get('amount')
       const planParticipants = (searchParams.get('participantIds') || '').split(',').filter(Boolean)
       if (planTitle) setTitle(planTitle)
+      if (detectedAmount && !totalAmount) {
+        setTotalAmount(detectedAmount)
+        updateAutoSplitAmounts(detectedAmount)
+      }
 
       // Initialize member shares if not already done (or if members changed significantly?)
       // We should only reset if memberShares is empty to preserve user input if they navigate away and back?
@@ -127,7 +132,7 @@ export default function NewSplitPage() {
         }
       }
     }
-  }, [groupData, currentUser, paidBy, memberShares.length, searchParams])
+  }, [groupData, currentUser, paidBy, memberShares.length, searchParams, totalAmount])
 
   useEffect(() => {
     if (error) {

@@ -11,12 +11,14 @@ import { OfflineStorage } from '@/modules/offline/offline-storage'
 import { useOffline } from '@/modules/offline/OfflineContext'
 import { auth } from '@/lib/firebase.config'
 import { onAuthStateChanged } from 'firebase/auth'
+import { useBillOcr } from '@/hooks/useBillOcr'
 
 type PlanType = 'STAY' | 'TRAVEL' | 'ACTIVITY'
 type PlanItem = { id: string; type: PlanType; title: string; locationFrom?: string | null; locationTo?: string | null; startDate: string; endDate?: string | null; startTime?: string | null; endTime?: string | null; bookingRef?: string | null; notes?: string | null; participantIds: string[]; linkedExpenseId?: string | null; sortOrder: number }
 type Member = { id: string; name: string }
 type Room = { name: string; destination: string; startDate: string; endDate: string; members: Member[] }
-type PendingChange = { method: 'POST' | 'PATCH' | 'DELETE'; itemId: string; clientId?: string; data?: any }
+type PendingChange = { method: 'POST' | 'PATCH' | 'DELETE'; itemId: string; clientId?: string; data?: Record<string, unknown> }
+type ParsedItem = Omit<PlanItem, 'id' | 'sortOrder' | 'participantIds' | 'linkedExpenseId'>
 
 const blankForm = (date: string): Omit<PlanItem, 'id' | 'sortOrder'> => ({ type: 'ACTIVITY', title: '', startDate: date, endDate: '', startTime: '', endTime: '', locationFrom: '', locationTo: '', bookingRef: '', notes: '', participantIds: [], linkedExpenseId: null })
 const inputClass = 'w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-gray-900 dark:text-white'
@@ -36,6 +38,12 @@ export default function PlanPage() {
   const [moreDetails, setMoreDetails] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [showScan, setShowScan] = useState(false)
+  const [scanBusy, setScanBusy] = useState(false)
+  const [parsedItems, setParsedItems] = useState<ParsedItem[]>([])
+  const [detectedExpense, setDetectedExpense] = useState<{ amount: number; currency: string } | null>(null)
+  const [scanError, setScanError] = useState('')
+  const { recognize, progress: ocrProgress, status: ocrStatus, isProcessing: ocrProcessing } = useBillOcr()
   const syncing = useRef(false)
 
   useEffect(() => onAuthStateChanged(auth, user => user ? setAuthReady(true) : router.push('/login')), [router])
@@ -134,7 +142,7 @@ export default function PlanPage() {
       OfflineStorage.save(OfflineStorage.KEYS.GROUP_PLAN(roomId), updated)
       setShowForm(false); setEditingId(null)
       router.refresh()
-    } catch (e: any) { setError(isOnline ? (e.message || 'Could not save item') : 'You are offline. Reconnect to save changes.') }
+    } catch (e: unknown) { setError(isOnline ? (e instanceof Error ? e.message : 'Could not save item') : 'You are offline. Reconnect to save changes.') }
     finally { setSaving(false) }
   }
   const deleteItem = async (item: PlanItem) => {
@@ -164,19 +172,57 @@ export default function PlanPage() {
     try { await navigator.clipboard.writeText(lines.join('\n')); setError('Day plan copied to clipboard.') } catch { setError('Clipboard access is unavailable.') }
   }
 
+  const scanBill = async (file?: File) => {
+    if (!file) return
+    setScanBusy(true); setScanError(''); setParsedItems([]); setDetectedExpense(null)
+    try {
+      const ocrText = await recognize(file)
+      const response = await authenticatedFetch(`/api/groups/${roomId}/plan/parse`, { method: 'POST', body: JSON.stringify({ ocrText, tripStartDate: room?.startDate?.slice(0, 10), tripEndDate: room?.endDate?.slice(0, 10) }) })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Could not parse bill')
+      setParsedItems(result.items || []); setDetectedExpense(result.detectedExpense || null)
+      if (!result.items?.length && !result.detectedExpense) setScanError('No itinerary details or payable amount were found. You can try a clearer image.')
+    } catch (e: unknown) { setScanError(e instanceof Error ? e.message : 'Could not scan this bill') }
+    finally { setScanBusy(false) }
+  }
+
+  const saveParsedItems = async () => {
+    if (!parsedItems.length) {
+      if (detectedExpense) router.push(`/room/${roomId}/split/new?title=${encodeURIComponent('Travel expense')}&date=${encodeURIComponent(new Date().toISOString().slice(0, 10))}&amount=${encodeURIComponent(String(detectedExpense.amount))}&currency=${encodeURIComponent(detectedExpense.currency)}`)
+      return
+    }
+    setSaving(true); setScanError('')
+    try {
+      const created: PlanItem[] = []
+      for (const item of parsedItems) {
+        const response = await authenticatedFetch(`/api/groups/${roomId}/plan`, { method: 'POST', body: JSON.stringify({ ...item, sortOrder: items.length + created.length, participantIds: [] }) })
+        if (!response.ok) throw new Error((await response.json()).error || 'Could not save all plan items')
+        created.push(await response.json())
+      }
+      const updated = [...items, ...created].sort((a, b) => a.startDate.localeCompare(b.startDate))
+      setLocalItems(updated); OfflineStorage.save(cacheKey, updated); setParsedItems([]); setShowScan(false)
+      if (detectedExpense) router.push(`/room/${roomId}/split/new?title=${encodeURIComponent(parsedItems[0]?.title || 'Travel expense')}&date=${encodeURIComponent(parsedItems[0]?.startDate || new Date().toISOString().slice(0, 10))}&amount=${encodeURIComponent(String(detectedExpense.amount))}&currency=${encodeURIComponent(detectedExpense.currency)}`)
+    } catch (e: unknown) { setScanError(e instanceof Error ? e.message : 'Could not save itinerary') }
+    finally { setSaving(false) }
+  }
+
   const labelDate = (value: string) => { try { return format(parseISO(value.slice(0, 10)), 'EEE, MMM d') } catch { return value } }
   const icons: Record<PlanType, JSX.Element> = { STAY: <FaBed />, TRAVEL: <FaPlane />, ACTIVITY: <FaTicketAlt /> }
   const styles: Record<PlanType, string> = { STAY: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200', TRAVEL: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-200', ACTIVITY: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200' }
 
   return <div className="min-h-screen bg-gray-100 dark:bg-gray-900"><Header title={room ? `${room.name} · Plan` : 'Trip Plan'} showBackButton backUrl={`/room/${roomId}`} />
     <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Trip plan</h1><p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{room?.destination || 'Your schedule, day by day'}</p></div><button onClick={() => openNew()} className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 font-medium text-white hover:bg-indigo-700"><FaPlus /> Add to plan</button></div>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Trip plan</h1><p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{room?.destination || 'Your schedule, day by day'}</p></div><div className="flex gap-2"><button onClick={() => { setShowScan(true); setParsedItems([]); setScanError('') }} className="rounded-md border border-indigo-600 px-4 py-2 font-medium text-indigo-700 dark:text-indigo-300">Scan Bill to Plan</button><button onClick={() => openNew()} className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 font-medium text-white hover:bg-indigo-700"><FaPlus /> Add to plan</button></div></div>
       {!isOnline && <p className="mb-4 rounded-md bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">Offline mode · showing the last saved itinerary.</p>}
       {error && <div className="mb-4 rounded-md bg-blue-50 p-3 text-sm text-blue-800 dark:bg-blue-900/30 dark:text-blue-200">{error}<button className="float-right" onClick={() => setError('')}>×</button></div>}
       {loadError && !items.length && <p className="mb-4 text-sm text-red-600">Could not load the itinerary.</p>}
       {isLoading && !items.length ? <p className="py-12 text-center text-gray-500">Loading itinerary…</p> : dayGroups.length === 0 ? <div className="rounded-xl bg-white p-10 text-center shadow dark:bg-gray-800"><FaTicketAlt className="mx-auto mb-3 text-3xl text-indigo-400" /><h2 className="font-medium text-gray-900 dark:text-white">Nothing planned yet</h2><p className="mt-1 text-sm text-gray-500">Add a stay, travel leg, or activity to get started.</p><button onClick={() => openNew()} className="mt-4 rounded-md bg-indigo-600 px-4 py-2 text-white">Add the first item</button></div> : <div className="space-y-7">{dayGroups.map(group => <section key={group.date}><div className="mb-3 flex items-center justify-between"><h2 className="font-semibold text-gray-900 dark:text-white">{group.label}</h2><div className="flex gap-2"><button onClick={() => copyDay(group)} className="flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-700"><FaCopy /> Copy day</button>{group.date !== 'unscheduled' && <button onClick={() => openNew(group.date)} className="rounded px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-gray-800"><FaPlus /> Add item</button>}</div></div>
         {!group.items.length ? <button onClick={() => openNew(group.date)} className="w-full rounded-lg border border-dashed border-gray-300 p-4 text-left text-sm text-gray-500 hover:border-indigo-400 dark:border-gray-700">Nothing scheduled · add an item</button> : <div className="space-y-3 border-l-2 border-indigo-200 pl-4 dark:border-indigo-900">{group.items.map(item => <article key={item.id} className="rounded-lg bg-white p-4 shadow-sm dark:bg-gray-800"><div className="flex flex-wrap items-start justify-between gap-3"><div className="flex min-w-0 gap-3"><span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${styles[item.type]}`}>{icons[item.type]}</span><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold text-gray-900 dark:text-white">{item.title}</h3><span className={`rounded-full px-2 py-0.5 text-xs ${styles[item.type]}`}>{typeLabels[item.type]}</span></div><p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{item.type === 'TRAVEL' ? <>{item.locationFrom || 'Origin'} <span className="mx-1">→</span> {item.locationTo || 'Destination'}</> : item.locationFrom}</p><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{item.type === 'STAY' && item.endDate ? `Check-in ${labelDate(item.startDate)} · Check-out ${labelDate(item.endDate)}` : item.type === 'TRAVEL' && item.endDate ? `Departure ${labelDate(item.startDate)} · Arrival ${labelDate(item.endDate)}` : labelDate(item.startDate)}{item.startTime ? ` · ${item.startTime}` : ''}{item.endTime ? ` – ${item.endTime}` : ''}</p>{item.bookingRef && <p className="mt-1 text-xs text-gray-500">Ref: {item.bookingRef}</p>}{item.notes && <p className="mt-2 whitespace-pre-wrap text-sm text-gray-600 dark:text-gray-300">{item.notes}</p>}</div></div><div className="flex items-center gap-1"><button title="Edit" onClick={() => openEdit(item)} className="rounded p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"><FaEdit /></button><button title="Delete" onClick={() => deleteItem(item)} className="rounded p-2 text-gray-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30"><FaTrash /></button></div></div><div className="mt-3 flex flex-wrap gap-2 border-t border-gray-100 pt-3 dark:border-gray-700">{item.participantIds.length > 0 && <span className="mr-auto self-center text-xs text-gray-500">{item.participantIds.map(id => room?.members.find(m => m.id === id)?.name).filter(Boolean).join(', ')}</span>}<button onClick={() => router.push(`/room/${roomId}/split/new?title=${encodeURIComponent(item.title)}&date=${encodeURIComponent(item.startDate.slice(0, 10))}&time=${encodeURIComponent(item.startTime || '')}&participantIds=${encodeURIComponent(item.participantIds.join(','))}&planItemId=${encodeURIComponent(item.id)}`)} className="inline-flex items-center gap-1 rounded-md bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-300"><FaMoneyBillWave /> {item.linkedExpenseId ? 'Log another expense' : 'Log Expense'}</button></div></article>)}</div>}</section>)}</div>}
     </main>
+    {showScan && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4" onMouseDown={e => e.target === e.currentTarget && !scanBusy && setShowScan(false)}><section className="max-h-[95vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl dark:bg-gray-800 sm:rounded-xl"><div className="mb-4 flex items-center justify-between"><div><h2 className="text-lg font-semibold text-gray-900 dark:text-white">Scan bill to plan</h2><p className="text-sm text-gray-500">OCR runs in your browser; Gemini extracts suggested details.</p></div><button disabled={scanBusy} onClick={() => setShowScan(false)} className="text-2xl text-gray-500">×</button></div>
+      {!parsedItems.length && <label className="block rounded-lg border-2 border-dashed border-gray-300 p-6 text-center text-sm text-gray-600 dark:border-gray-600 dark:text-gray-300">Choose a travel ticket, hotel confirmation, or booking bill<input type="file" accept="image/*" className="mt-3 block w-full text-sm" disabled={scanBusy} onChange={e => void scanBill(e.target.files?.[0])} />{ocrProcessing && <span className="mt-3 block">{ocrStatus} · {ocrProgress}%<span className="mt-2 block h-2 rounded bg-gray-200"><span className="block h-2 rounded bg-indigo-600" style={{ width: `${ocrProgress}%` }} /></span></span>}{scanBusy && !ocrProcessing && <span className="mt-3 block">Extracting plan details…</span>}</label>}
+      {parsedItems.map((item, index) => <div key={index} className="mt-4 rounded-lg border border-gray-200 p-4 dark:border-gray-700"><p className="mb-3 text-sm font-medium">Suggested item {index + 1} · {item.type}</p><div className="grid grid-cols-2 gap-3"><label className="col-span-2 text-sm">Title<input className={`${inputClass} mt-1`} value={item.title} onChange={e => setParsedItems(list => list.map((v, i) => i === index ? { ...v, title: e.target.value } : v))} /></label><label className="text-sm">Start date<input type="date" className={`${inputClass} mt-1`} value={item.startDate} onChange={e => setParsedItems(list => list.map((v, i) => i === index ? { ...v, startDate: e.target.value } : v))} /></label><label className="text-sm">End date<input type="date" className={`${inputClass} mt-1`} value={item.endDate || ''} onChange={e => setParsedItems(list => list.map((v, i) => i === index ? { ...v, endDate: e.target.value || null } : v))} /></label><label className="text-sm">Start time<input type="time" className={`${inputClass} mt-1`} value={item.startTime || ''} onChange={e => setParsedItems(list => list.map((v, i) => i === index ? { ...v, startTime: e.target.value || null } : v))} /></label><label className="text-sm">End time<input type="time" className={`${inputClass} mt-1`} value={item.endTime || ''} onChange={e => setParsedItems(list => list.map((v, i) => i === index ? { ...v, endTime: e.target.value || null } : v))} /></label><label className="text-sm">Location / origin<input className={`${inputClass} mt-1`} value={item.locationFrom || ''} onChange={e => setParsedItems(list => list.map((v, i) => i === index ? { ...v, locationFrom: e.target.value || null } : v))} /></label><label className="text-sm">Destination<input className={`${inputClass} mt-1`} value={item.locationTo || ''} onChange={e => setParsedItems(list => list.map((v, i) => i === index ? { ...v, locationTo: e.target.value || null } : v))} /></label><label className="col-span-2 text-sm">Booking reference<input className={`${inputClass} mt-1`} value={item.bookingRef || ''} onChange={e => setParsedItems(list => list.map((v, i) => i === index ? { ...v, bookingRef: e.target.value || null } : v))} /></label></div></div>)}
+      {detectedExpense && <p className="mt-4 rounded-md bg-green-50 p-3 text-sm text-green-800 dark:bg-green-900/30 dark:text-green-200">Detected payable amount: {detectedExpense.currency} {detectedExpense.amount}. You can review it in a new split after saving the plan.</p>}{scanError && <p className="mt-3 text-sm text-red-600">{scanError}</p>}<div className="mt-5 flex justify-end gap-2"><button disabled={scanBusy} onClick={() => setShowScan(false)} className="rounded-md px-4 py-2 text-sm text-gray-600 dark:text-gray-300">Close</button>{detectedExpense && !parsedItems.length && <button onClick={() => void saveParsedItems()} className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white">Add detected expense</button>}{parsedItems.length > 0 && <button disabled={saving} onClick={() => void saveParsedItems()} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{saving ? 'Saving…' : detectedExpense ? 'Save plan & add expense' : 'Save plan items'}</button>}</div></section></div>}
     {showForm && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4" onMouseDown={e => e.target === e.currentTarget && setShowForm(false)}><form onSubmit={saveItem} className="max-h-[95vh] w-full max-w-xl overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl dark:bg-gray-800 sm:rounded-xl"><div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-semibold text-gray-900 dark:text-white">{editingId ? 'Edit plan item' : 'Add to your plan'}</h2><button type="button" onClick={() => setShowForm(false)} className="text-2xl text-gray-500">×</button></div>
       <div className="mb-4 grid grid-cols-3 gap-2">{(['STAY', 'TRAVEL', 'ACTIVITY'] as PlanType[]).map(type => <button type="button" key={type} onClick={() => setForm(f => ({ ...f, type }))} className={`rounded-md border px-3 py-2 text-sm font-medium ${form.type === type ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-200' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{icons[type]} <span className="ml-1">{typeLabels[type]}</span></button>)}</div>
       <label className="mb-3 block text-sm font-medium text-gray-700 dark:text-gray-300">Title<input required autoFocus className={`${inputClass} mt-1`} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder={form.type === 'STAY' ? 'Hotel or accommodation' : form.type === 'TRAVEL' ? 'Flight, train, or drive' : 'What are you doing?'} /></label>
