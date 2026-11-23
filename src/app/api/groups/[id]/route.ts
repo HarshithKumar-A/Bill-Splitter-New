@@ -56,6 +56,9 @@ export async function GET(
     const formattedGroup = {
       id: group.id,
       name: group.name,
+      destination: group.destination,
+      startDate: group.startDate.toISOString().split('T')[0],
+      endDate: group.endDate.toISOString().split('T')[0],
       created: group.createdAt.toISOString().split('T')[0],
       members: group.members.map(member => ({
         id: member.user.id,
@@ -81,4 +84,4 @@ export async function GET(
       { status: 500 }
     )
   }
-} 
+}

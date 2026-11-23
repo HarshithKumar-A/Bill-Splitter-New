@@ -24,6 +24,7 @@ model User {
   groups    GroupMember[]
   expenses  Expense[]     @relation("PaidBy")
   shares    ExpenseShare[]
+  createdPlanItems ItineraryItem[] @relation("PlanItemCreator")
 
   @@index([email])
   @@index([providerId])
@@ -45,6 +46,7 @@ model Group {
   // Relations
   members   GroupMember[]
   expenses  Expense[]
+  planItems ItineraryItem[]
 }
 
 model GroupMember {
@@ -76,6 +78,40 @@ model Expense {
   group         Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
   paidBy        User     @relation("PaidBy", fields: [paidById], references: [id])
   shares        ExpenseShare[]
+  linkedPlanItem ItineraryItem? @relation("PlanItemExpense")
+}
+
+enum PlanItemType {
+  STAY
+  TRAVEL
+  ACTIVITY
+}
+
+model ItineraryItem {
+  id              String       @id @default(cuid())
+  groupId         String
+  createdById     String?
+  type            PlanItemType
+  title           String
+  locationFrom    String?
+  locationTo      String?
+  startDate       DateTime
+  endDate         DateTime?
+  startTime       String?
+  endTime         String?
+  bookingRef      String?
+  notes           String?
+  participantIds  String[]     @default([])
+  linkedExpenseId String?      @unique
+  sortOrder       Int          @default(0)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  group           Group        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdBy       User?        @relation("PlanItemCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  linkedExpense   Expense?     @relation("PlanItemExpense", fields: [linkedExpenseId], references: [id], onDelete: SetNull)
+
+  @@index([groupId, startDate, startTime, sortOrder])
 }
 
 model ExpenseShare {
@@ -90,4 +126,4 @@ model ExpenseShare {
   user        User     @relation(fields: [userId], references: [id])
 
   @@unique([expenseId, userId])
-} 
+}

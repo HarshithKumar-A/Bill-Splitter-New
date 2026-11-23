@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { FaMoneyBillWave, FaHistory, FaComments, FaChartPie, FaFileAlt, FaUsers } from 'react-icons/fa'
+import { FaMoneyBillWave, FaHistory, FaComments, FaChartPie, FaFileAlt, FaUsers, FaRoute } from 'react-icons/fa'
 import Header from '@/components/Header'
 import { useApiAuth } from '@/hooks/useApiAuth'
 import { auth } from '@/lib/firebase.config'
@@ -92,6 +92,11 @@ export default function RoomDashboard() {
 
       <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+          <Link href={`/room/${roomId}/plan`} className="flex flex-col items-center justify-center p-6 bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-md transition-shadow">
+            <FaRoute className="text-indigo-500 text-3xl mb-3" />
+            <h2 className="text-lg font-medium text-gray-900 dark:text-white">Trip Plan</h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 text-center">View and organize your itinerary</p>
+          </Link>
           {/* Create Split */}
           <Link
             href={`/room/${roomId}/split/new`}
@@ -157,4 +162,4 @@ export default function RoomDashboard() {
       </main>
     </div>
   )
-} 
+}

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { FaArrowLeft } from 'react-icons/fa'
 import { User } from '@prisma/client'
 import Header from '@/components/Header'
@@ -36,11 +36,14 @@ interface MemberShare {
 export default function NewSplitPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const roomId = params.id as string
   const { authenticatedFetch } = useApiAuth()
 
   // Form state
   const [title, setTitle] = useState('')
+  const [expenseDate, setExpenseDate] = useState(searchParams.get('date') || new Date().toISOString().slice(0, 10))
+  const [expenseTime, setExpenseTime] = useState(searchParams.get('time') || '')
   const [totalAmount, setTotalAmount] = useState('')
   const [category, setCategory] = useState('')
   const [paidBy, setPaidBy] = useState('')
@@ -97,6 +100,10 @@ export default function NewSplitPage() {
       const members = groupData.members || []
       setUsers(members)
 
+      const planTitle = searchParams.get('title')
+      const planParticipants = (searchParams.get('participantIds') || '').split(',').filter(Boolean)
+      if (planTitle) setTitle(planTitle)
+
       // Initialize member shares if not already done (or if members changed significantly?)
       // We should only reset if memberShares is empty to preserve user input if they navigate away and back?
       // But this is a new split page, so always fresh.
@@ -105,7 +112,7 @@ export default function NewSplitPage() {
           memberId: member.id,
           name: member.name,
           amount: '',
-          isIncluded: true,
+          isIncluded: planParticipants.length === 0 || planParticipants.includes(member.id),
           userEntered: false
         }))
         setMemberShares(initialMemberShares)
@@ -120,7 +127,7 @@ export default function NewSplitPage() {
         }
       }
     }
-  }, [groupData, currentUser, paidBy, memberShares.length])
+  }, [groupData, currentUser, paidBy, memberShares.length, searchParams])
 
   useEffect(() => {
     if (error) {
@@ -353,6 +360,8 @@ export default function NewSplitPage() {
         groupId: roomId,
         paidById: isTheirOwn ? currentUser!.id : paidBy, // Use current user ID when "Their Own" is selected
         paidByTheirOwn: isTheirOwn,
+        date: `${expenseDate}T${expenseTime || '00:00'}:00`,
+        planItemId: searchParams.get('planItemId'),
         shares: includedMembers.map(member => ({
           userId: member.memberId,
           amount: parseFloat(member.amount)
@@ -374,6 +383,14 @@ export default function NewSplitPage() {
       if (!response.ok) {
         const errorData = await response.json()
         throw new Error(errorData.error || 'Failed to create expense')
+      }
+
+      const result = await response.json()
+      const planItemId = searchParams.get('planItemId')
+      if (planItemId && result.expense?.id) {
+        await authenticatedFetch(`/api/groups/${roomId}/plan/${planItemId}`, {
+          method: 'PATCH', body: JSON.stringify({ linkedExpenseId: result.expense.id })
+        })
       }
 
       // Redirect to room page on success
@@ -475,6 +492,12 @@ export default function NewSplitPage() {
                 placeholder="e.g., Dinner at Restaurant"
                 required
               />
+            </div>
+
+            {/* Total Amount */}
+            <div className="mb-6">
+              <label htmlFor="expenseDate" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Date</label>
+              <div className="grid grid-cols-2 gap-3"><input id="expenseDate" type="date" value={expenseDate} onChange={e => setExpenseDate(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2" /><input aria-label="Time" type="time" value={expenseTime} onChange={e => setExpenseTime(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2" /></div>
             </div>
 
             {/* Total Amount */}
@@ -658,4 +681,4 @@ export default function NewSplitPage() {
       </main>
     </div>
   )
-} 
+}

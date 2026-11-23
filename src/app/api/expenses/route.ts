@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
     // Verify authentication
     const authUser = await getAuthUser(request)
 
-    const { title, amount, category, groupId, paidById, shares, paidByTheirOwn = false } = await request.json()
+    const { title, amount, category, groupId, paidById, shares, date, paidByTheirOwn = false } = await request.json()
 
     // Validate input
     if (!title || !amount || !category || !groupId || !paidById || !shares || shares.length === 0) {
@@ -183,6 +183,7 @@ export async function POST(request: NextRequest) {
         groupId,
         paidById,
         paidByTheirOwn,
+        ...(date ? { date: new Date(date) } : {}),
         shares: {
           create: shares.map((share: { userId: string, amount: number }) => ({
             userId: share.userId,

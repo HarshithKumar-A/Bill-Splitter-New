@@ -50,5 +50,7 @@ export const OfflineStorage = {
         GROUPS: 'groups',
         GROUP_MEMBERS: (groupId: string) => `group_members_${groupId}`,
         GROUP_DETAILS: (groupId: string) => `group_details_${groupId}`,
+        GROUP_PLAN: (groupId: string) => `group_plan_${groupId}`,
+        GROUP_PLAN_PENDING: (groupId: string) => `group_plan_pending_${groupId}`,
     }
 };
